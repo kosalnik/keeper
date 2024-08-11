@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kosalnik/keeper/internal/log"
 	"github.com/urfave/cli/v2"
 )
 
@@ -20,5 +21,8 @@ func main() {
 		},
 	}
 
-	app.Run(os.Args)
+	if err := app.Run(os.Args); err != nil {
+		log.Error("Fail", log.Err(err))
+		os.Exit(1)
+	}
 }
