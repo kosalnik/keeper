@@ -4,31 +4,27 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/kosalnik/keeper/internal/contract"
 	"github.com/kosalnik/keeper/internal/log"
+	"github.com/kosalnik/keeper/internal/service"
+	"github.com/kosalnik/keeper/pkg/gophkeeper"
 )
 
 type KeeperServer struct {
-	contract.KeeperServer
+	gophkeeper.KeeperServiceServer
+	userSvc *service.UserService
 }
 
-type UserRegisterer interface {
-	Register(login, password string) uuid.UUID
-}
-
-type UserLoginer interface {
-	Login(login, password string) uuid.NullUUID
+func NewKeeperServer(userSvc *service.UserService) *KeeperServer {
+	return &KeeperServer{
+		userSvc: userSvc,
+	}
 }
 
 type CredentialsSaver interface {
 	SaveCredentials(userID uuid.UUID)
 }
 
-func NewKeeperServer() *KeeperServer {
-	return &KeeperServer{}
-}
-
-func (s *KeeperServer) Ping(_ context.Context, in *contract.Empty) (*contract.Empty, error) {
+func (s *KeeperServer) Ping(_ context.Context, in *gophkeeper.Empty) (*gophkeeper.Empty, error) {
 	log.Info("ping")
 	return in, nil
 }
