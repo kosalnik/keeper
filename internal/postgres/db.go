@@ -7,17 +7,20 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/kosalnik/keeper/internal/log"
 )
 
-var ErrDBConnection = errors.New("connection db fails")
+var (
+	ErrDBConnection     = errors.New("connection db fails")
+	ErrModelIsNil       = errors.New("model should not be nil")
+	ErrEmptyResultSlice = errors.New("res slice should have positive capacity")
+)
 
 // Conn - обёртка над sql.DB
 type Conn struct {
 	db *sql.DB
 }
 
-func NewConn(dsn string) (*Conn, error) {
+func NewConn(dsn string) (conn *Conn, err error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, err
@@ -32,14 +35,31 @@ func NewConn(dsn string) (*Conn, error) {
 	if !ok {
 		return nil, ErrDBConnection
 	}
-	if err := initDatabase(db); err != nil {
+	conn = &Conn{db: db}
+	if err := RunMigrations(ctx, db); err != nil {
 		return nil, err
 	}
-	return &Conn{db: db}, nil
+	return conn, nil
 }
 
 func (c *Conn) Close() error {
 	return c.db.Close()
+}
+
+func (c *Conn) InTransaction(ctx context.Context, fn func(ctx context.Context, tx *sql.Tx) error) (err error) {
+	tx, err := c.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer func(tx *sql.Tx) {
+		if er := tx.Rollback(); er != nil && !errors.Is(er, sql.ErrTxDone) {
+			err = errors.Join(err, er)
+		}
+	}(tx)
+	if err := fn(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (c *Conn) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
@@ -54,30 +74,6 @@ func (c *Conn) QueryRowContext(ctx context.Context, query string, args ...any) *
 	return c.db.QueryRowContext(ctx, query, args...)
 }
 
-const sqlCreateTableUser = `CREATE TABLE IF NOT EXISTS "user"
-    (
-		id uuid not null primary key,
-		login varchar(255) not null unique,
-		pass varchar(255) not null
-	)`
-
-func initDatabase(db *sql.DB) (err error) {
-	log.Info("Initialize database")
-	ctx := context.Background()
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return err
-	}
-	defer func(tx *sql.Tx) {
-		if er := tx.Rollback(); er != nil && !errors.Is(er, sql.ErrTxDone) {
-			err = errors.Join(err, er)
-		}
-	}(tx)
-	if _, err := tx.ExecContext(ctx, sqlCreateTableUser); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	return nil
+func (d *Conn) Ping(ctx context.Context) error {
+	return d.db.PingContext(ctx)
 }
